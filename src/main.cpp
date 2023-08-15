@@ -142,7 +142,6 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
   BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
-  oAdvertisementData.setName(DEVICE_NAME);
   oAdvertisementData.setShortName(deviceShortName);
   oAdvertisementData.setFlags(0x06); // LE General Discoverable Mode | BR_EDR_NOT_SUPPORTED
   oAdvertisementData.addData(strData);
