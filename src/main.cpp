@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <fstream>
 #include <sstream>
-#include <optional>
+#include <mutex>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <SD.h>
@@ -26,6 +26,10 @@ std::shared_ptr<std::thread> th = nullptr;
 BLEServer *server = nullptr;
 BLEAdvertising *advertising = nullptr;
 
+std::shared_ptr<std::thread> timethread = nullptr;
+
+std::mutex mtx_;
+
 const char* ntpServer = "ntp.nict.jp";
 const long gmtOffset_sec = 9 * 3600;
 const int daylightOffset_sec = 0;
@@ -34,13 +38,18 @@ WiFiClient client;
 
 // 時間関連
 struct tm timeinfo;
+struct tm disp_timeinfo;
 
 // NTPによる時刻取得関数
 int ntp(){
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer); //NTPによる時刻取得
-  if (!getLocalTime(&timeinfo)) {
+  tm time;
+  if (!getLocalTime(&time)) {
     M5.Display.printf("/nFailed to obtain time"); //時刻取得失敗表示
     return (false); //時刻取得失敗でリターン
+  } else {
+    std::lock_guard<std::mutex> lock(mtx_);
+    timeinfo = time;
   }
   return (true); //時刻取得成功でリターン
 }
@@ -75,9 +84,14 @@ int ntpWithWIFI(){
   return (result); //時刻取得成功でリターン
 }
 
-std::string getLocalTimeAsString(tm& time) {
+std::string getLocalTimeAsString() {
+  tm time;
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    time = timeinfo;
+  }
+
   std::stringstream tmstr;
-  getLocalTime(&time);
   tmstr << std::setw(4) << std::setfill('0') << (time.tm_year + 1900) << "-";
   tmstr << std::setw(2) << std::setfill('0') << (time.tm_mon + 1) << "-";
   tmstr << std::setw(2) << std::setfill('0') << time.tm_mday << "T";
@@ -89,8 +103,12 @@ std::string getLocalTimeAsString(tm& time) {
 
 std::vector<char> getLocalTimeAsCharArray() {
   tm time;
+  {
+    std::lock_guard<std::mutex> lock(mtx_);
+    time = timeinfo;
+  }
+
   std::vector<char> tmarray;
-  getLocalTime(&time);
   tmarray.push_back((char)((time.tm_year + 1900) % 256));
   tmarray.push_back((char)((time.tm_year + 1900) / 256));
   tmarray.push_back((char)(time.tm_mon + 1));
@@ -140,7 +158,7 @@ void setupBLE()
       setAdvertisementData(advertising);
       Serial.print("Starting Advertisement: ");
       advertising->start();
-      std::this_thread::sleep_for(std::chrono::seconds(2));
+      std::this_thread::sleep_for(std::chrono::seconds(4));
       advertising->stop();
       Serial.println("Stop Advertisement. ");
     } });
@@ -248,6 +266,18 @@ void setup()
     M5.Display.fillScreen(TFT_BLACK); //画面消去
   }
 
+  timethread = std::make_shared<std::thread>([&](){
+    while (true) {
+      tm time;
+      getLocalTime(&time);
+      {
+        std::lock_guard<std::mutex> lock(mtx_);
+        timeinfo = time;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+  });
+
   setupBLE();
 }
 
@@ -255,23 +285,29 @@ void loop() {
   std::this_thread::sleep_for(std::chrono::milliseconds(500));
   //delay(500);
 
-  tm tmptm;
-  getLocalTime(&tmptm);
-  //毎日午前2時に時刻取得。時刻取得に失敗しても動作継続
-  if((tmptm.tm_hour == 2)&&(tmptm.tm_min == 0)&&(tmptm.tm_sec == 0)) {
-    ntpWithWIFI();
-  }
-
-  if (tmptm.tm_year != timeinfo.tm_year || tmptm.tm_mon != timeinfo.tm_mon || tmptm.tm_mday != timeinfo.tm_mday ||
-    tmptm.tm_hour != timeinfo.tm_hour || tmptm.tm_min != timeinfo.tm_min || tmptm.tm_sec != timeinfo.tm_sec) {
-      timeinfo = tmptm;
-      std::string timestr = getLocalTimeAsString(tmptm);
-
-      // Display Time
-      M5.Display.setTextSize(2);
-      M5.Display.setTextColor(M5.Display.color565(255, 255, 255)); // 文字色指定
-      M5.Display.setCursor(0, 0);                                  // 表示開始位置左上角（X,Y）
-      M5.Display.clear();
-      M5.Display.print(timestr.c_str());
+  {
+    tm time;
+    {
+      std::lock_guard<std::mutex> lock(mtx_);
+      time = timeinfo;
     }
+
+    //毎日午前2時に時刻取得。時刻取得に失敗しても動作継続
+    if((time.tm_hour == 2)&&(time.tm_min == 0)&&(time.tm_sec == 0)) {
+      ntpWithWIFI();
+    }
+
+    if (disp_timeinfo.tm_year != time.tm_year || disp_timeinfo.tm_mon != time.tm_mon || disp_timeinfo.tm_mday != time.tm_mday ||
+      disp_timeinfo.tm_hour != time.tm_hour || disp_timeinfo.tm_min != time.tm_min || disp_timeinfo.tm_sec != time.tm_sec) {
+        disp_timeinfo = time;
+        std::string timestr = getLocalTimeAsString();
+
+        // Display Time
+        M5.Display.setTextSize(2);
+        M5.Display.setTextColor(M5.Display.color565(255, 255, 255)); // 文字色指定
+        M5.Display.setCursor(0, 0);                                  // 表示開始位置左上角（X,Y）
+        M5.Display.clear();
+        M5.Display.print(timestr.c_str());
+    }
+  }
 }
