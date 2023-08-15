@@ -16,6 +16,7 @@
 #include "FS.h"
 
 const char *DEVICE_NAME = "M5Time"; // デバイス名
+const char *deviceShortName = "M5Time"; // デバイス名
 const char *ssid_filename = "/ssid.txt";
 
 String JsonData; // JSON形式データの格納用
@@ -141,9 +142,12 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
   BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+  // oAdvertisementData.setName(DEVICE_NAME);
+  oAdvertisementData.setShortName(deviceShortName);
   oAdvertisementData.setFlags(0x06); // LE General Discoverable Mode | BR_EDR_NOT_SUPPORTED
   oAdvertisementData.addData(strData);
   pAdvertising->setAdvertisementData(oAdvertisementData);
+  pAdvertising->setAdvertisementType(esp_ble_adv_type_t::ADV_TYPE_NONCONN_IND);
 }
 
 void setupBLE()
@@ -235,7 +239,7 @@ void setup()
       i_ssid = n_jsondata["ssid"].as<String>(); // "ssid"の値を取得
       i_pass = n_jsondata["pass"].as<String>(); // "pass"の値を取得
 
-      Serial.println("Can read from JSON Data!"); // シリアルコンソールへの出力
+      Serial.println("Read from JSON Data."); // シリアルコンソールへの出力
       M5.Display.setTextColor(RED);                   // テキストカラーの設定
       M5.Display.print("ID: ");
       M5.Display.println(i_ssid); // "ssid"の値をディスプレイ表示
@@ -263,7 +267,6 @@ void setup()
 
     WiFi.disconnect(true); //WiFi切断
     WiFi.mode(WIFI_OFF); //WiFiオフ
-    M5.Display.fillScreen(TFT_BLACK); //画面消去
   }
 
   timethread = std::make_shared<std::thread>([&](){
