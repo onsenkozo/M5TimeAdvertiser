@@ -14,7 +14,7 @@
 #include <Time.h>
 #include "FS.h"
 
-const char *DEVICE_NAME = "M5StackTimeAdvertiser"; // デバイス名
+const char *DEVICE_NAME = "M5Time"; // デバイス名
 const char *ssid_filename = "/sdcard/ssid.txt";
 
 String JsonData; // JSON形式データの格納用
@@ -111,9 +111,13 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
   strData += (char)0xff;                      // Manufacturer specific data
   strData += (char)0xff;                      // manufacturer ID low byte
   strData += (char)0xff;                      // manufacturer ID high byte
+  strData += (char)0xff;                      // test
+  Serial.printf("\n");
   for (const char& chr : tmarray) {
     strData += chr;                           // 日時
+    Serial.printf("%02x ", chr);
   }
+  Serial.printf("\n");
   strData = (char)strData.length() + strData; // 先頭にLengthを設定
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
