@@ -98,6 +98,7 @@ std::vector<char> getLocalTimeAsCharArray() {
   tmarray.push_back((char)timeinfo.tm_sec);
   tmarray.push_back((char)9);
   tmarray.push_back((char)0);
+  tmarray.push_back((char)timeinfo.tm_wday);
   return tmarray;
 }
 
