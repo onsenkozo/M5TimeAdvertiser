@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <fstream>
 #include <sstream>
+#include <optional>
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <SD.h>
@@ -15,7 +16,7 @@
 #include "FS.h"
 
 const char *DEVICE_NAME = "M5Time"; // デバイス名
-const char *ssid_filename = "/sdcard/ssid.txt";
+const char *ssid_filename = "/ssid.txt";
 
 String JsonData; // JSON形式データの格納用
 int sdstat = 0;
@@ -74,31 +75,32 @@ int ntpWithWIFI(){
   return (result); //時刻取得成功でリターン
 }
 
-std::string getLocalTimeAsString() {
+std::string getLocalTimeAsString(tm& time) {
   std::stringstream tmstr;
-  getLocalTime(&timeinfo);
-  tmstr << std::setw(4) << std::setfill('0') << (timeinfo.tm_year + 1900) << "-";
-  tmstr << std::setw(2) << std::setfill('0') << (timeinfo.tm_mon + 1) << "-";
-  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_mday << "T";
-  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_hour << ":";
-  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_min << ":";
-  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_sec << "+09:00";
+  getLocalTime(&time);
+  tmstr << std::setw(4) << std::setfill('0') << (time.tm_year + 1900) << "-";
+  tmstr << std::setw(2) << std::setfill('0') << (time.tm_mon + 1) << "-";
+  tmstr << std::setw(2) << std::setfill('0') << time.tm_mday << "T";
+  tmstr << std::setw(2) << std::setfill('0') << time.tm_hour << ":";
+  tmstr << std::setw(2) << std::setfill('0') << time.tm_min << ":";
+  tmstr << std::setw(2) << std::setfill('0') << time.tm_sec << "+09:00";
   return tmstr.str();
 }
 
 std::vector<char> getLocalTimeAsCharArray() {
+  tm time;
   std::vector<char> tmarray;
-  getLocalTime(&timeinfo);
-  tmarray.push_back((char)((timeinfo.tm_year + 1900) % 256));
-  tmarray.push_back((char)((timeinfo.tm_year + 1900) / 256));
-  tmarray.push_back((char)(timeinfo.tm_mon + 1));
-  tmarray.push_back((char)timeinfo.tm_mday);
-  tmarray.push_back((char)timeinfo.tm_hour);
-  tmarray.push_back((char)timeinfo.tm_min);
-  tmarray.push_back((char)timeinfo.tm_sec);
+  getLocalTime(&time);
+  tmarray.push_back((char)((time.tm_year + 1900) % 256));
+  tmarray.push_back((char)((time.tm_year + 1900) / 256));
+  tmarray.push_back((char)(time.tm_mon + 1));
+  tmarray.push_back((char)time.tm_mday);
+  tmarray.push_back((char)time.tm_hour);
+  tmarray.push_back((char)time.tm_min);
+  tmarray.push_back((char)time.tm_sec);
   tmarray.push_back((char)9);
   tmarray.push_back((char)0);
-  tmarray.push_back((char)timeinfo.tm_wday);
+  tmarray.push_back((char)time.tm_wday);
   return tmarray;
 }
 
@@ -108,21 +110,19 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
 
   // string領域に送信情報を連結する
   std::string strData = "";
+  strData += (char)13;                        // length: 13 octets
   strData += (char)0xff;                      // Manufacturer specific data
   strData += (char)0xff;                      // manufacturer ID low byte
   strData += (char)0xff;                      // manufacturer ID high byte
-  strData += (char)0xff;                      // test
   Serial.printf("\n");
   for (const char& chr : tmarray) {
     strData += chr;                           // 日時
     Serial.printf("%02x ", chr);
   }
   Serial.printf("\n");
-  strData = (char)strData.length() + strData; // 先頭にLengthを設定
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
   BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
-  oAdvertisementData.setName(DEVICE_NAME);
   oAdvertisementData.setFlags(0x06); // LE General Discoverable Mode | BR_EDR_NOT_SUPPORTED
   oAdvertisementData.addData(strData);
   pAdvertising->setAdvertisementData(oAdvertisementData);
@@ -160,19 +160,17 @@ void setup()
 
   Serial.print("MAC: ");
   Serial.println(baseMacChr);
+  M5.Display.setTextSize(2);
   M5.Display.print("MAC: ");
   M5.Display.println(baseMacChr);
 
   StaticJsonDocument<192> n_jsondata;
 
-  // if (!SD.begin())
-  // {                                                // SDカードの初期化
-  //   M5.Display.println("Card failed, or not present"); // SDカードが未挿入の場合の出力
-  //   Serial.println("Card failed, or not present"); // シリアルコンソールへの出力
-  //   while (1)
-  //     ;
-  // }
-  // Serial.println("microSD card initialized."); // シリアルコンソールへの出力
+  // SDカードマウント待ち
+  while (false == SD.begin(GPIO_NUM_4, SPI, 15000000)) {
+    Serial.println("SD Wait...");
+    delay(500);
+  }
 
   if (SD.exists(ssid_filename))
   {                                     // ファイルの存在確認（SSID.txt）
@@ -223,8 +221,6 @@ void setup()
       M5.Display.setTextColor(RED);                   // テキストカラーの設定
       M5.Display.print("ID: ");
       M5.Display.println(i_ssid); // "ssid"の値をディスプレイ表示
-      M5.Display.print("PW: ");
-      M5.Display.println(i_pass); // "pass"の値をディスプレイ表示
     }
     M5.Display.print("Conecting Wi-Fi "); // シリアルコンソールへの出力
 
@@ -256,6 +252,9 @@ void setup()
 }
 
 void loop() {
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  //delay(500);
+
   tm tmptm;
   getLocalTime(&tmptm);
   //毎日午前2時に時刻取得。時刻取得に失敗しても動作継続
@@ -263,11 +262,16 @@ void loop() {
     ntpWithWIFI();
   }
 
-  // Display Time
-  M5.Display.clear();
-  M5.Display.setTextSize(2);
-  M5.Display.setTextColor(M5.Display.color565(255, 255, 255)); // 文字色指定
-  M5.Display.setCursor(0, 0);                                  // 表示開始位置左上角（X,Y）
-  M5.Display.print(getLocalTimeAsString().c_str());
+  if (tmptm.tm_year != timeinfo.tm_year || tmptm.tm_mon != timeinfo.tm_mon || tmptm.tm_mday != timeinfo.tm_mday ||
+    tmptm.tm_hour != timeinfo.tm_hour || tmptm.tm_min != timeinfo.tm_min || tmptm.tm_sec != timeinfo.tm_sec) {
+      timeinfo = tmptm;
+      std::string timestr = getLocalTimeAsString(tmptm);
 
+      // Display Time
+      M5.Display.setTextSize(2);
+      M5.Display.setTextColor(M5.Display.color565(255, 255, 255)); // 文字色指定
+      M5.Display.setCursor(0, 0);                                  // 表示開始位置左上角（X,Y）
+      M5.Display.clear();
+      M5.Display.print(timestr.c_str());
+    }
 }
