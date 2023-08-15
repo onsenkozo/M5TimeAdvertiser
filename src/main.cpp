@@ -15,7 +15,7 @@
 #include <Time.h>
 #include "FS.h"
 
-const char *DEVICE_NAME = "M5Time"; // デバイス名
+const char *DEVICE_NAME = "M5StackTimeAdvertiser"; // デバイス名
 const char *deviceShortName = "M5Time"; // デバイス名
 const char *ssid_filename = "/ssid.txt";
 
@@ -142,7 +142,7 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
   BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
-  // oAdvertisementData.setName(DEVICE_NAME);
+  oAdvertisementData.setName(DEVICE_NAME);
   oAdvertisementData.setShortName(deviceShortName);
   oAdvertisementData.setFlags(0x06); // LE General Discoverable Mode | BR_EDR_NOT_SUPPORTED
   oAdvertisementData.addData(strData);
