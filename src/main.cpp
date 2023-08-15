@@ -15,7 +15,7 @@
 #include "FS.h"
 
 const char *DEVICE_NAME = "M5StackTimeAdvertiser"; // デバイス名
-const char *ssid_filename = "/ssid.txt";
+const char *ssid_filename = "/sdcard/ssid.txt";
 
 String JsonData; // JSON形式データの格納用
 int sdstat = 0;
@@ -24,6 +24,15 @@ String i_ssid, i_pass;
 std::shared_ptr<std::thread> th = nullptr;
 BLEServer *server = nullptr;
 BLEAdvertising *advertising = nullptr;
+
+const char* ntpServer = "ntp.nict.jp";
+const long gmtOffset_sec = 9 * 3600;
+const int daylightOffset_sec = 0;
+
+WiFiClient client;
+
+// 時間関連
+struct tm timeinfo;
 
 // NTPによる時刻取得関数
 int ntp(){
@@ -68,25 +77,42 @@ int ntpWithWIFI(){
 std::string getLocalTimeAsString() {
   std::stringstream tmstr;
   getLocalTime(&timeinfo);
-  tmstr << (timeinfo.tm_year + 1900) << "-";
-  tmstr << (timeinfo.tm_mon + 1) << "-";
-  tmstr << timeinfo.tm_mday << "T";
-  tmstr << timeinfo.tm_hour << ":";
-  tmstr << timeinfo.tm_min << ":";
-  tmstr << timeinfo.tm_sec << "+09:00";
+  tmstr << std::setw(4) << std::setfill('0') << (timeinfo.tm_year + 1900) << "-";
+  tmstr << std::setw(2) << std::setfill('0') << (timeinfo.tm_mon + 1) << "-";
+  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_mday << "T";
+  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_hour << ":";
+  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_min << ":";
+  tmstr << std::setw(2) << std::setfill('0') << timeinfo.tm_sec << "+09:00";
   return tmstr.str();
+}
+
+std::vector<char> getLocalTimeAsCharArray() {
+  std::vector<char> tmarray;
+  getLocalTime(&timeinfo);
+  tmarray.push_back((char)((timeinfo.tm_year + 1900) % 256));
+  tmarray.push_back((char)((timeinfo.tm_year + 1900) / 256));
+  tmarray.push_back((char)(timeinfo.tm_mon + 1));
+  tmarray.push_back((char)timeinfo.tm_mday);
+  tmarray.push_back((char)timeinfo.tm_hour);
+  tmarray.push_back((char)timeinfo.tm_min);
+  tmarray.push_back((char)timeinfo.tm_sec);
+  tmarray.push_back((char)9);
+  tmarray.push_back((char)0);
+  return tmarray;
 }
 
 void setAdvertisementData(BLEAdvertising *pAdvertising)
 {
-  std::string tmstr = getLocalTimeAsString();
+  std::vector<char> tmarray = getLocalTimeAsCharArray();
 
   // string領域に送信情報を連結する
   std::string strData = "";
   strData += (char)0xff;                      // Manufacturer specific data
   strData += (char)0xff;                      // manufacturer ID low byte
   strData += (char)0xff;                      // manufacturer ID high byte
-  strData += tmstr;                           // 日時
+  for (const char& chr : tmarray) {
+    strData += chr;                           // 日時
+  }
   strData = (char)strData.length() + strData; // 先頭にLengthを設定
 
   // デバイス名とフラグをセットし、送信情報を組み込んでアドバタイズオブジェクトに設定する
@@ -100,7 +126,7 @@ void setAdvertisementData(BLEAdvertising *pAdvertising)
 void setupBLE()
 {
   Serial.println("Starting BLE");
-  BLEDevice::init("my-peripheral");
+  BLEDevice::init(DEVICE_NAME);
   server = BLEDevice::createServer();
   advertising = server->getAdvertising();
   th = std::make_shared<std::thread>([&]()
@@ -114,13 +140,6 @@ void setupBLE()
       Serial.println("Stop Advertisement. ");
     } });
 }
-
-const char* ntpServer = "ntp.nict.jp";
-const long gmtOffset_sec = 9 * 3600;
-const int daylightOffset_sec = 0;
-WiFiClient client;
-// 時間関連
-struct tm timeinfo;
 
 void setup()
 {
@@ -136,28 +155,30 @@ void setup()
 
   Serial.print("MAC: ");
   Serial.println(baseMacChr);
+  M5.Display.print("MAC: ");
+  M5.Display.println(baseMacChr);
 
   StaticJsonDocument<192> n_jsondata;
 
-  if (!SD.begin())
-  {                                                // SDカードの初期化
-    M5.Display.println("Card failed, or not present"); // SDカードが未挿入の場合の出力
-    Serial.println("Card failed, or not present"); // シリアルコンソールへの出力
-    while (1)
-      ;
-  }
-  Serial.println("microSD card initialized."); // シリアルコンソールへの出力
+  // if (!SD.begin())
+  // {                                                // SDカードの初期化
+  //   M5.Display.println("Card failed, or not present"); // SDカードが未挿入の場合の出力
+  //   Serial.println("Card failed, or not present"); // シリアルコンソールへの出力
+  //   while (1)
+  //     ;
+  // }
+  // Serial.println("microSD card initialized."); // シリアルコンソールへの出力
 
   if (SD.exists(ssid_filename))
   {                                     // ファイルの存在確認（SSID.txt）
-    Serial.println("SSID.txt exists."); // ファイルがある場合の処理
+    Serial.printf("%s exists.\n", ssid_filename); // ファイルがある場合の処理
     delay(500);
     File myFile = SD.open(ssid_filename, FILE_READ); // 読み取り専用でファイルを開く
 
     if (myFile)
     { // ファイルが正常に開けた場合
       std::stringstream ss;
-      M5.Display.println("/SSID.txt Content:");
+      M5.Display.printf("%s Content:\n", ssid_filename);
       while (myFile.available())
       { // ファイル内容を順に変数に格納
         JsonData.concat(myFile.readString());
@@ -167,14 +188,14 @@ void setup()
     }
     else
     {
-      M5.Display.println("error opening /SSID.txt"); // ファイルが開けない場合
+      M5.Display.printf("error opening %s\n", ssid_filename); // ファイルが開けない場合
       sdstat = 0;
     }
   }
   else
   {
-    M5.Display.println("SSID.txt doesn't exit."); // ファイルが存在しない場合
-    Serial.println("SSID.txt doesn't exit."); // シリアルコンソールへの出力
+    M5.Display.printf("%s doesn't exit.\n", ssid_filename); // ファイルが存在しない場合
+    Serial.printf("%s doesn't exit.\n", ssid_filename); // シリアルコンソールへの出力
     sdstat = 0;
   }
 
