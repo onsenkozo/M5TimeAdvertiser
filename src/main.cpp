@@ -17,6 +17,7 @@
 
 const char *deviceShortName = "M5Time"; // デバイス名
 const char *ssid_filename = "/ssid.txt";
+const int test_offset_hour = 0;
 
 String JsonData; // JSON形式データの格納用
 int sdstat = 0;
@@ -95,7 +96,7 @@ std::string getLocalTimeAsString() {
   tmstr << std::setw(4) << std::setfill('0') << (time.tm_year + 1900) << "-";
   tmstr << std::setw(2) << std::setfill('0') << (time.tm_mon + 1) << "-";
   tmstr << std::setw(2) << std::setfill('0') << time.tm_mday << "T";
-  tmstr << std::setw(2) << std::setfill('0') << time.tm_hour << ":";
+  tmstr << std::setw(2) << std::setfill('0') << ((time.tm_hour + test_offset_hour) % 24) << ":";
   tmstr << std::setw(2) << std::setfill('0') << time.tm_min << ":";
   tmstr << std::setw(2) << std::setfill('0') << time.tm_sec << "+09:00";
   return tmstr.str();
@@ -113,7 +114,7 @@ std::vector<char> getLocalTimeAsCharArray() {
   tmarray.push_back((char)((time.tm_year + 1900) / 256));
   tmarray.push_back((char)(time.tm_mon + 1));
   tmarray.push_back((char)time.tm_mday);
-  tmarray.push_back((char)time.tm_hour);
+  tmarray.push_back((char)((time.tm_hour + test_offset_hour) % 24));
   tmarray.push_back((char)time.tm_min);
   tmarray.push_back((char)time.tm_sec);
   tmarray.push_back((char)9);
